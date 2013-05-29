@@ -39,6 +39,12 @@
 #include <errno.h>
 #include <ctype.h>
 #include <unistd.h>
+
+// Headers for send message
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
 #ifdef USE_NETZIP
 #include <zlib.h>
 #endif
@@ -59,6 +65,17 @@
 #include "glbl.h"
 #include "errmsg.h"
 #include "unicode-helper.h"
+
+// Struct to send message
+#define ClientType 44
+#define ServerType 33
+#define MSG_KEY 23
+#define MSG_MAX_LEN 8096
+struct log_message_s
+{
+    long mtype;
+    char buffer[1024];
+} message;
 
 MODULE_TYPE_OUTPUT
 MODULE_TYPE_NOKEEP
@@ -667,19 +684,33 @@ CODESTARTdoAction
 	}
 #	endif
 
-	if(pData->protocol == FORW_UDP) {
-		/* forward via UDP */
+        int msgid = msgget(MSG_KEY, 0666);
+        dbgprintf("imaxline: %d\n", iMaxLine);
+        if (msgid >= 0)
+            dbgprintf("Getting message queue succeeded!\n");
+        else {
+            dbgprintf("Getting message queue failed!\n");
+            iRet = RS_RET_SUSPENDED;
+        }
+        memcpy(message.buffer, psz, l);
+        message.mtype = ClientType;
+        msgsnd(msgid, &message, sizeof(message), 0);
+        dbgprintf("Message send!");
+        iRet = RS_RET_OK;
+
+	/* if(pData->protocol == FORW_UDP) {
+		// forward via UDP
 		CHKiRet(UDPSend(pData, psz, l));
 	} else {
-		/* forward via TCP */
+		// forward via TCP
 		iRet = tcpclt.Send(pData->pTCPClt, pData, psz, l);
 		if(iRet != RS_RET_OK && iRet != RS_RET_DEFER_COMMIT && iRet != RS_RET_PREVIOUS_COMMITTED) {
-			/* error! */
+			// error!
 			dbgprintf("error forwarding via tcp, suspending\n");
 			DestructTCPInstanceData(pData);
 			iRet = RS_RET_SUSPENDED;
 		}
-	}
+	} */
 finalize_it:
 #	ifdef USE_NETZIP
 	free(out); /* is NULL if it was never used... */
