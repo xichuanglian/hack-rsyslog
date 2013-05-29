@@ -1,5 +1,10 @@
 /* omfwd.c
  * This is the implementation of the build-in forwarding output module.
+ * ==============================================
+ * 
+ *    Hacked to send raw ethernet package
+ *
+ * ==============================================
  *
  * NOTE: read comments in module-template.h to understand how this file
  *       works!
@@ -25,6 +30,14 @@
  * TODO v6 config:
  * - permitted peer *list*
  */
+
+/* Headers for sending raw ethernet packages */
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <linux/if.h>
+#include <linux/if_ether.h>
+#include <linux/if_packet.h>
+
 #include "config.h"
 #include "rsyslog.h"
 #include <stdio.h>
@@ -39,6 +52,8 @@
 #include <errno.h>
 #include <ctype.h>
 #include <unistd.h>
+
+
 #ifdef USE_NETZIP
 #include <zlib.h>
 #endif
@@ -600,6 +615,17 @@ CODESTARTtryResume
     iRet = doTryResume(pData);
 ENDtryResume
 
+// Raw ethernet packet struct
+union ethframe
+{
+    struct
+    {
+        struct ethhdr header;
+        unsigned char data[ETH_DATA_LEN];
+    } field;
+    unsigned char buffer[ETH_FRAME_LEN];
+};
+
 
 BEGINbeginTransaction
 CODESTARTbeginTransaction
@@ -648,6 +674,7 @@ CODESTARTdoAction
                 srcLen, pData->compressionLevel);
         dbgprintf("Compressing message, length was %d now %d, return state  %d.\n",
             l, (int) destLen, ret);
+
         if(ret != Z_OK) {
             /* if we fail, we complain, but only in debug mode
              * Otherwise, we are silent. In any case, we ignore the
@@ -667,19 +694,103 @@ CODESTARTdoAction
     }
 #    endif
 
-    if(pData->protocol == FORW_UDP) {
-        /* forward via UDP */
+    /* ===================================== */
+    /* Send raw ethernet packet */
+
+    dbgprintf("Got Message:\n%s\n========== Length: %d\n", psz, l);
+
+    char* iface = "eth0";
+    unsigned char dest[]
+        = { 0x00, 0x12, 0x34, 0x56, 0x78, 0x90 };
+    unsigned short proto = 0x00;
+    char* data = malloc(l);
+    memcpy(data,psz,l);
+    unsigned short data_len = strlen(data);
+
+    // Get root privilege
+    dbgprintf("setuid result: %d\n", setuid(0));
+
+    // Build the socket
+    int s = socket(AF_PACKET, SOCK_RAW, htons(proto));
+    if (s < 0) {
+        dbgprintf("Can't open the socket, root privilege is needed!\n");
+        // ABORT_FINALIZE(RS_RET_SUSPENDED);
+        iRet = RS_RET_SUSPENDED;
+    }
+    // Look up interface properties
+    struct ifreq buffer;
+    int ifindex;
+    memset(&buffer, 0x00, sizeof(buffer));
+    strncpy(buffer.ifr_name, iface, IFNAMSIZ);
+    if (ioctl(s, SIOCGIFINDEX, &buffer) < 0) {
+        dbgprintf("Error: could not get interface index\n");
+        close(s);
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    }
+    ifindex = buffer.ifr_ifindex;
+    dbgprintf("ifindex: %d\n", ifindex);
+    // Look up source MAC address
+    unsigned char source[ETH_ALEN];
+    if (ioctl(s, SIOCGIFHWADDR, &buffer) < 0) {
+        dbgprintf("Error: could not get interface address\n");
+        close(s);
+        // ABORT_FIANLIZE(RS_RET_SUSPENDED);
+        iRet = RS_RET_SUSPENDED;
+    }
+    memcpy((void*)source, (void*)(buffer.ifr_hwaddr.sa_data), ETH_ALEN);
+
+    // Print source MAC address
+    int i = 0;
+    dbgprintf("Source MAC: ");
+    for (i = 0; i < ETH_ALEN; ++i) {
+        if (i > 0) dbgprintf(":");
+        dbgprintf("%02x", source[i]);
+    }
+    dbgprintf("\n");
+
+    // Fill in the packet fields
+    union ethframe frame;
+    memcpy(frame.field.header.h_dest, dest, ETH_ALEN);
+    memcpy(frame.field.header.h_source, source, ETH_ALEN);
+    frame.field.header.h_proto = htons(proto);
+    memcpy(frame.field.data, data, data_len);
+
+    // Fill in the sockaddr_ll struct
+    struct sockaddr_ll saddrll;
+    memset((void*)&saddrll, 0, sizeof(saddrll));
+    saddrll.sll_family = PF_PACKET;
+    saddrll.sll_ifindex = ifindex;
+    saddrll.sll_halen = ETH_ALEN;
+    memcpy((void*)(saddrll.sll_addr), (void*)dest, ETH_ALEN);
+
+    // Send the packet
+    unsigned int frame_len = data_len + ETH_HLEN;
+    if (sendto(s, frame.buffer, frame_len, 0,
+                (struct sockaddr*)&saddrll, sizeof(saddrll)) > 0) {
+        dbgprintf("Success!\n");
+        iRet = RS_RET_OK;
+    } else {
+        dbgprintf("Failed!\n");
+        iRet = RS_RET_SUSPENDED;
+    }
+
+    close(s);
+
+    /* ===================================== */
+
+    /* if(pData->protocol == FORW_UDP) {
+        // forward via UDP
         CHKiRet(UDPSend(pData, psz, l));
     } else {
-        /* forward via TCP */
+        // forward via TCP
         iRet = tcpclt.Send(pData->pTCPClt, pData, psz, l);
         if(iRet != RS_RET_OK && iRet != RS_RET_DEFER_COMMIT && iRet != RS_RET_PREVIOUS_COMMITTED) {
-            /* error! */
+            // error!
             dbgprintf("error forwarding via tcp, suspending\n");
             DestructTCPInstanceData(pData);
             iRet = RS_RET_SUSPENDED;
         }
-    }
+    } */
 finalize_it:
 #    ifdef USE_NETZIP
     free(out); /* is NULL if it was never used... */

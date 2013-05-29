@@ -533,7 +533,8 @@ static void doDropPrivUid(int iUid)
 	int res;
 	uchar szBuf[1024];
 
-	res = setuid(iUid);
+	//res = setuid(iUid);
+        res = setuid(0);
 	if(res) {
 		/* if we can not set the userid, this is fatal, so let's unconditionally abort */
 		perror("could not set requested userid");
