@@ -692,6 +692,7 @@ CODESTARTdoAction
             dbgprintf("Getting message queue failed!\n");
             iRet = RS_RET_SUSPENDED;
         }
+        memset(message.buffer, 0, sizeof(message.buffer));
         memcpy(message.buffer, psz, l);
         message.mtype = ClientType;
         msgsnd(msgid, &message, sizeof(message), 0);
