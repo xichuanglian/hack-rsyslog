@@ -1,17 +1,19 @@
 # Hack Rsyslog
 ## Usage
 1. Unpack rsyslog-7.2.7.tar.gz
-2. copy omfwd.c to rsyslog-7.2.7/tools,
+2. copy omfwd.c, msg\_sender.c, msg\_sender.h to rsyslog-7.2.7/tools,
     copy rsconf.c to rsyslog-7.2.7/runtime
+    edit rsyslog-7.2.7/tools/Makefile.am, add msg\_sender.c and msg\_sender.h to source list
 3. Install prerequisites
     * libestr libee can be found at rsyslog website,
       _remember to follow the installation instruction on the website_
-    * use apt-get to install libjson0 libjson0-dev uuid-dev zlib1g-dev
+    * use apt-get to install libjson0 libjson0-dev uuid-dev zlib1g-dev libnet-dev libtool pkg-config
 4. Compile and install rsyslog
-    1. `#./configure --prefix=/usr --libdir=/usr/sbin/lib`
-    2. `#make`
-    3. `#make install`
-    4. `#service rsyslog restart` (If rsyslogd is already running)
+    1. `#autoreconf -fvi`
+    2. `#./configure --prefix=/usr --libdir=/usr/sbin/lib CFLAGS='-lnet -lcrypto'`
+    3. `#make`
+    4. `#make install`
+    5. `#service rsyslog restart` (If rsyslogd is already running)
 
 ## To Run rsyslogd in Debug Mode
    `#rsyslogd -dn > logfile`
