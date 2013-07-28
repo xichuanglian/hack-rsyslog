@@ -60,6 +60,8 @@
 #include "errmsg.h"
 #include "unicode-helper.h"
 
+#include "msg_sender.h"
+
 MODULE_TYPE_OUTPUT
 MODULE_TYPE_NOKEEP
 MODULE_CNFNAME("omfwd")
@@ -667,19 +669,27 @@ CODESTARTdoAction
 	}
 #	endif
 
-	if(pData->protocol == FORW_UDP) {
-		/* forward via UDP */
-		CHKiRet(UDPSend(pData, psz, l));
-	} else {
-		/* forward via TCP */
-		iRet = tcpclt.Send(pData->pTCPClt, pData, psz, l);
-		if(iRet != RS_RET_OK && iRet != RS_RET_DEFER_COMMIT && iRet != RS_RET_PREVIOUS_COMMITTED) {
-			/* error! */
-			dbgprintf("error forwarding via tcp, suspending\n");
-			DestructTCPInstanceData(pData);
-			iRet = RS_RET_SUSPENDED;
-		}
-	}
+        sender_s* sender = msg_sender_init(NULL);
+        if (msg_sender_send(sender, psz, l) == -1) {
+            iRet = RS_RET_SUSPENDED;
+        } else {
+            iRet = RS_RET_OK;
+        }
+        msg_sender_close(sender);
+
+	//if(pData->protocol == FORW_UDP) {
+	//	/* forward via UDP */
+	//	CHKiRet(UDPSend(pData, psz, l));
+	//} else {
+	//	/* forward via TCP */
+	//	iRet = tcpclt.Send(pData->pTCPClt, pData, psz, l);
+	//	if(iRet != RS_RET_OK && iRet != RS_RET_DEFER_COMMIT && iRet != RS_RET_PREVIOUS_COMMITTED) {
+	//		/* error! */
+	//		dbgprintf("error forwarding via tcp, suspending\n");
+	//		DestructTCPInstanceData(pData);
+	//		iRet = RS_RET_SUSPENDED;
+	//	}
+	//}
 finalize_it:
 #	ifdef USE_NETZIP
 	free(out); /* is NULL if it was never used... */

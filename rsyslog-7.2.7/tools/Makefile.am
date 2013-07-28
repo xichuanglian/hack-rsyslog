@@ -12,6 +12,8 @@ rsyslogd_SOURCES = \
 	omusrmsg.h \
 	omfwd.c \
 	omfwd.h \
+	msg_sender.c \
+	msg_sender.h \
 	omfile.c \
 	omfile.h \
 	ompipe.c \
